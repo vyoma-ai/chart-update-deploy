@@ -1,0 +1,60 @@
+name: Chart Update on Deploy
+description: Action to update a Helm chart when deploying an application
+inputs:
+  pat:
+    description: PAT for accessing the application repo
+    required: true
+  env:
+    description: Name of the environment to deploy the application
+    required: true
+  chart-name:
+    description: Name of the chart getting deployed
+    required: true
+  chart-version:
+    description: Version of the chart to deploy
+    required: true
+  dependency:
+    description: Name of the dependency to update
+    required: true
+  component:
+    description: The component name
+    required: false
+    default: ""
+  acr-client-id:
+    description: Azure Container Registry client id
+    required: true
+  acr-client-secret:
+    description: Azure Container Registry client secret
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v5
+      with:
+        repository: vyoma-ai/k8s-landscape-charts
+        token: ${{ inputs.pat }}
+
+    - name: Login to Azure Container Repository
+      run: |
+        helm registry login myvyoma-bscqhjacgqesdtbw.azurecr.io --username ${{ inputs.acr-client-id }} --password ${{ inputs.acr-client-secret }}
+      shell: bash
+
+    - name: Update Dependency
+      run: |
+        cd ${{ inputs.chart-name }}/envs/${{ inputs.env }}
+        yq -i '(.dependencies[] | select(.name == "${{ inputs.dependency }}")).version = "${{ inputs.chart-version }}"' './Chart.yaml'
+        helm dependency update
+      shell: bash
+
+    - name: Commit Changes
+      env:
+        GIT_AUTHOR_NAME: Vyoma
+        GIT_COMMITTER_NAME: Vyoma
+        GIT_AUTHOR_EMAIL: admin@myvyoma.io
+        GIT_COMMITTER_EMAIL: admin@myvyoma.io
+      run: |
+        git add -A
+        git diff-index --quiet HEAD || git commit -m "feat: Update umbrella chart for ${{ inputs.chart-name }} in ${{ inputs.env }} environment for chart version ${{ inputs.chart-version }}"
+        git push
+      shell: bash
